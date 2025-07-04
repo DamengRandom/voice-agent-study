@@ -12,11 +12,18 @@ import Link from "next/link";
 import { toast } from "sonner";
 import Field from "./Field";
 import { useRouter } from "next/navigation";
+import { auth } from "@/firebase/client";
+import { signIn, signUp } from "@/lib/actions/auth.action";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 
 type FormType = 'sign-in' | 'sign-up';
 
 const authFormSchema = (type: FormType) => z.object({
-  ...(type === 'sign-up' && { name: z.string().min(2).max(50) }),
+  // ...(type === 'sign-up' && { name: z.string().min(2).max(50) }),
+  name: type === "sign-up" ? z.string().min(3) : z.string().optional(),
   email: z.string().email(),
   password: z.string().min(3),
 });
@@ -36,16 +43,46 @@ const AuthForm = ({ type }: { type: FormType }) => {
   })
  
   // 2. Define a submit handler.
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       if (isSignInPage) {
+        const { email, password } = values;
+
+        const userCredentials = await signInWithEmailAndPassword(auth, email, password);
+
+        const idToken = await userCredentials.user.getIdToken();
+
+        if (!idToken) {
+          toast.error('Failed to get id token, and cannot login ..');
+          return;
+        }
+
+        await signIn({email, idToken });
+
         toast.success('Sign in successfully');
         router.push('/');
-        console.info('sign in:', values); // @To be removed
+        // console.info('sign in:', email, password, name); // @To be removed
       } else {
+        const { email, password, name } = values;
+
+        const userCredentials = await createUserWithEmailAndPassword(auth, email, password);
+
+        const result = await signUp({
+          uid: userCredentials.user.uid,
+          name: name!,
+          email,
+          password
+        });
+
+        if (!result?.success) {
+          toast.error(result?.message);
+
+          return;
+        }
+
         toast.success('Account created successfully. Please sign in to start the practice.');
         router.push('/sign-in');
-        console.info('sign up:', values); // @To be removed
+        // console.info('sign up:', email, password, name); // @To be removed
       }
     } catch (error) {
       toast.error(`Error on submit form: ${error}`);
